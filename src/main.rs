@@ -1,6 +1,7 @@
 mod game;
 
 use game::Game;
+use once_cell::sync::Lazy;
 use std::collections::HashSet;
 use std::ops::Sub;
 use Sq::*;
@@ -57,9 +58,7 @@ impl Sub for &Group {
 }
 
 impl Player {
-    fn from_game(mut game: Game) -> Self {
-        // First click for known non-mine position.
-        game.click(0, 6);
+    fn from_game(game: Game) -> Self {
         Self {
             groups: vec![vec![Unprocessed; game.cols]; game.rows],
             game,
@@ -91,6 +90,14 @@ impl Player {
     }
 
     fn play(&mut self) -> Result<(), String> {
+        let (fr, fc) = self.game.first_click;
+        if !self.game.click(fr, fc) {
+            return Err(format!(
+                "Supposedly known good square for first click tripped a mine: ({}, {})",
+                fr, fc
+            ));
+        }
+
         let mut changed = true;
         while std::mem::take(&mut changed) {
             for r in 0..self.game.rows {
@@ -115,13 +122,13 @@ impl Player {
                             mines: n as usize - known_mines,
                             unknowns,
                         };
-                        if group.mines == 0 && group.unknowns.len() > 0 {
+                        if group.mines == 0 && !group.unknowns.is_empty() {
                             self.click_all(group.unknowns.iter())?;
                             changed = true;
                             self.groups[r][c] = Done;
                             continue;
                         }
-                        if group.mines == group.unknowns.len() && group.unknowns.len() > 0 {
+                        if group.mines == group.unknowns.len() && !group.unknowns.is_empty() {
                             self.mark_all(group.unknowns.iter())?;
                             changed = true;
                             self.groups[r][c] = Done;
@@ -144,14 +151,14 @@ impl Player {
                             .collect::<Vec<_>>();
                         match &subs[..] {
                             [sub] => {
-                                let diff_group = &group - &sub;
+                                let diff_group = &group - sub;
                                 if diff_group.mines > 0
                                     && diff_group.unknowns.len() == diff_group.mines
                                 {
                                     self.mark_all(diff_group.unknowns.iter())?;
                                     changed = true;
                                     continue;
-                                } else if diff_group.mines == 0 && diff_group.unknowns.len() > 0 {
+                                } else if diff_group.mines == 0 && !diff_group.unknowns.is_empty() {
                                     self.click_all(diff_group.unknowns.iter())?;
                                     changed = true;
                                     continue;
@@ -177,11 +184,11 @@ impl Player {
                                     self.mark_all(diff_group.unknowns.iter())?;
                                     changed = true;
                                     continue;
-                                } else if diff_group.mines == 0 && diff_group.unknowns.len() > 0 {
+                                } else if diff_group.mines == 0 && !diff_group.unknowns.is_empty() {
                                     self.click_all(diff_group.unknowns.iter())?;
                                     changed = true;
                                     continue;
-                                } else if diff_group.unknowns.len() > 0 {
+                                } else if !diff_group.unknowns.is_empty() {
                                     grps.push(diff_group);
                                 }
                             } else {
@@ -204,11 +211,11 @@ impl Player {
                                     }
                                 }
                                 match &poss[..] {
-                                    [grp] if grp.unknowns.len() > 0 => {
+                                    [grp] if !grp.unknowns.is_empty() => {
                                         if grp.mines > 0 && grp.mines == grp.unknowns.len() {
                                             self.mark_all(grp.unknowns.iter())?;
                                             changed = true;
-                                        } else if grp.mines == 0 && grp.unknowns.len() > 0 {
+                                        } else if grp.mines == 0 && !grp.unknowns.is_empty() {
                                             self.click_all(grp.unknowns.iter())?;
                                             changed = true;
                                         }
@@ -239,9 +246,9 @@ impl Player {
     }
 }
 
-fn main() {
-    #[rustfmt::skip]
-    let sample = vec![
+#[rustfmt::skip]
+static SAMPLE1: Lazy<Vec<Vec<u8>>> = Lazy::new(|| {
+    vec![
         vec![1, 1, 2, 9, 2, 1, 0, 0, 1, 9, 1, 0, 1, 9, 2, 9, 1, 2, 9, 2, 0, 0, 0, 0, 1, 1, 1, 2, 9, 2],
         vec![1, 9, 2, 2, 9, 1, 0, 0, 1, 1, 1, 0, 2, 2, 3, 2, 2, 3, 9, 2, 1, 2, 3, 2, 3, 9, 3, 3, 9, 2],
         vec![1, 1, 2, 2, 2, 1, 0, 0, 0, 0, 0, 0, 1, 9, 1, 1, 9, 2, 2, 2, 2, 9, 9, 9, 4, 9, 9, 2, 1, 1],
@@ -262,8 +269,19 @@ fn main() {
         vec![0, 0, 1, 1, 2, 1, 1, 1, 9, 2, 9, 2, 2, 3, 9, 1, 3, 9, 5, 9, 2, 1, 2, 3, 3, 3, 2, 1, 0, 0],
         vec![0, 0, 1, 1, 1, 0, 0, 2, 3, 4, 2, 2, 9, 2, 2, 2, 3, 9, 3, 1, 1, 2, 9, 9, 2, 9, 3, 2, 1, 0],
         vec![0, 0, 1, 9, 1, 0, 0, 1, 9, 9, 1, 1, 1, 1, 1, 9, 2, 1, 1, 0, 0, 2, 9, 3, 2, 2, 9, 9, 1, 0],
-    ];
+    ]
+});
 
-    let mut player = Player::from_game(Game::from_sol(sample));
+#[test]
+fn test_sample1() {
+    let valid_first_click = (0, 6);
+    let mut player = Player::from_game(Game::from_sol(&SAMPLE1, valid_first_click));
+    assert_eq!(Ok(()), player.play());
+}
+
+fn main() {
+    println!("Run `cargo test` to test the solver against samples");
+
+    let mut player = Player::from_game(Game::from_sol(&SAMPLE1, (0, 6)));
     player.play().unwrap();
 }

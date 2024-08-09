@@ -6,20 +6,22 @@ pub struct Game {
     pub rows: usize,
     pub cols: usize,
     pub visible_grid: Vec<Vec<Square>>,
+    pub first_click: (usize, usize),
     solution: Vec<Vec<Square>>,
 }
 
 impl Game {
-    pub fn from_sol(solution: Vec<Vec<u8>>) -> Self {
+    pub fn from_sol(solution: &[Vec<u8>], first_click: (usize, usize)) -> Self {
         let rows = solution.len();
         let cols = solution[0].len();
         Self {
             rows,
             cols,
+            first_click,
             visible_grid: vec![vec![Unknown; cols]; rows],
             solution: solution
-                .into_iter()
-                .map(|row| row.into_iter().map(|v| v.try_into().unwrap()).collect())
+                .iter()
+                .map(|row| row.iter().map(|&v| v.try_into().unwrap()).collect())
                 .collect(),
         }
     }
